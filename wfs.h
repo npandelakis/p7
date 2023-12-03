@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #ifndef MOUNT_WFS_H_
 #define MOUNT_WFS_H_
@@ -37,5 +38,3 @@ struct wfs_log_entry {
 };
 
 #endif
-
-
