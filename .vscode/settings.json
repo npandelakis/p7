@@ -2,6 +2,10 @@
     "files.associations": {
         "fuse.h": "c",
         "stdlib.h": "c",
-        "stat.h": "c"
+        "stat.h": "c",
+        "array": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "utility": "c"
     }
 }
