@@ -19,6 +19,10 @@ mkfs.wfs:
 fsck.wfs:
 	$(CC) $(CFLAGS) -o fsck.wfs fsck.wfs.c
 
+# .PHONY: test0
+# test0:
+#     $(CC) $(CFLAGS) -o test0 test0.c
+
 .PHONY: clean
 clean:
 	rm -rf $(NAME)

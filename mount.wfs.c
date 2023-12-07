@@ -15,19 +15,9 @@ struct wfs_state {
     FILE *logfile;
     char *rootdir;
     char *mmap_pointer;
+    int next_inode;
 };
 
-
-
-
-//https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
-static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
-    return 0;
-}
-
-static int wfs_mkdir(const char* path, mode_t mode) {
-    return 0;
-}
 
 struct wfs_log_entry *search_path_helper(int inode_number) {
     struct wfs_state *wfs_data = (struct wfs_state *) fuse_get_context()->private_data;
@@ -110,6 +100,41 @@ struct wfs_log_entry *search_inode(int inode_number) {
     return last_log_entry;
 }
 
+int get_next_inode(struct wfs_state *wfs_data) {
+    
+    int biggest_inode = 0;
+    struct wfs_sb *superblock = (struct wfs_sb *) &(wfs_data);
+
+    // Start at first inode
+    int cur_offset = sizeof(struct wfs_sb) + sizeof(struct wfs_log_entry);
+
+    struct wfs_log_entry *log_entry;
+    while(cur_offset < (superblock->head)) {
+        // Get current log entry
+        log_entry = (struct wfs_log_entry *) &(wfs_data->mmap_pointer[cur_offset]);
+        // printf("inode of current log: %d\n",log_entry->inode.inode_number);
+        // printf("current offset: %d\n",cur_offset);
+        
+        if (log_entry->inode.inode_number == 0 && log_entry->inode.size == 0) {
+            break;
+        }
+        
+        // Go to next entry if this entry has been deleted
+        if(log_entry->inode.deleted == 1) { 
+            //printf("Deleted inode (dir)\n");
+            cur_offset += log_entry->inode.size + sizeof(struct wfs_inode); //recalculate log_entry offset to find next log_entry
+            continue;
+        }
+        if(log_entry->inode.inode_number > biggest_inode) {
+            biggest_inode = log_entry->inode.inode_number;
+        }
+
+        cur_offset += log_entry->inode.size + sizeof(struct wfs_inode); //recalculate log_entry offset to find next log_entry
+    }
+    
+    return biggest_inode + 1;
+}
+
 
 struct wfs_log_entry *search_path(char * path) {
     char* token1 = strtok(path,"/");
@@ -183,7 +208,7 @@ static int wfs_getattr(const char *path, struct stat *stbuf) {
     struct wfs_log_entry *log_entry = search_path(path_copy);
 
     if (log_entry == NULL) {
-        return -1;
+        return -ENOENT;
     }
 
     struct wfs_inode inode = log_entry->inode;
@@ -211,7 +236,7 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
     // char *data = log_entry->data;
 
     // int i = 0;
-    // char c;
+    // char c;char* parent = strtok(path,"/"
     // while(i < log_entry->inode.size && (c = data[i]) != EOF && i < size ) {
     //     buf[i] = c;
     //     i++;
@@ -222,9 +247,111 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
     // }
 
     // printf("buf: %s\n",buf);
-    strcpy(buf,"content");
-    buf[8] = EOF;
-    return 8;
+    //strcpy(buf,"content");
+    //memcpy(buf,"conten",7);
+    return 0;
+}
+
+struct wfs_log_entry *get_parent_log(const char * path) {
+    int str_len = strlen(path);
+
+    int index = 0;
+
+    char c;
+    for (int i = 0; i < str_len; i++) {
+        c = path[i];
+        if (c == '/') {
+            index = i;
+        }
+    }
+
+    char *path_copy = malloc(sizeof(char)*index);
+    
+    memcpy(path_copy, path, index - 1);
+    path_copy[index] = '\0';
+
+    struct wfs_log_entry *log_entry = search_path(path_copy);
+
+    return log_entry;
+}
+
+char *get_path_leaf(const char *path) {
+    char *path_copy = malloc(sizeof(path)*(strlen(path) + 1));
+
+    strcpy(path_copy, path);
+
+    char *token = strtok(path_copy,"/");
+
+    while (token != NULL) {
+        token = strtok(NULL, "/");
+    }
+
+    return token;
+}
+
+
+//https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
+static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
+    struct wfs_state *wfs_data = (struct wfs_state *) fuse_get_context()->private_data;
+
+    //Grab log entry of directory above last directory in path
+    struct wfs_log_entry *parent_log_entry = get_parent_log(path);
+
+    struct wfs_log_entry new_parent_log_entry;
+
+    //create new data entry for parent log entry and add data
+    struct wfs_dentry *new_parent_dentry;
+
+
+    new_parent_log_entry.inode.inode_number = parent_log_entry->inode.inode_number;
+    new_parent_log_entry.inode.mode = mode;
+    new_parent_log_entry.inode.deleted=0;
+    new_parent_log_entry.inode.flags = 0;
+    new_parent_log_entry.inode.atime = 0;
+    new_parent_log_entry.inode.mtime = 0;
+    new_parent_log_entry.inode.ctime = 0;
+    new_parent_log_entry.inode.links = 0;
+
+    new_parent_dentry->inode_number = wfs_data->next_inode;    
+    strcpy(new_parent_dentry->name,get_path_leaf(path));
+    memcpy(&new_parent_log_entry.data, parent_log_entry->data, parent_log_entry->inode.size);
+    memcpy(&new_parent_log_entry.data[parent_log_entry->inode.size], &new_parent_dentry, sizeof(struct wfs_dentry));
+
+    //update inode size after writing new dentry
+    new_parent_log_entry.inode.size = parent_log_entry->inode.size + sizeof(struct wfs_dentry);
+
+    //write our new parent log to our mmap
+    struct wfs_sb *superblock = (struct wfs_sb *) &(wfs_data);
+    memcpy(&wfs_data->mmap_pointer[superblock->head], &new_parent_log_entry, sizeof(struct wfs_log_entry) + new_parent_log_entry.inode.size);
+
+    superblock->head += sizeof(struct wfs_log_entry) + new_parent_log_entry.inode.size;
+
+
+
+    //create new log entry for new node
+    struct wfs_log_entry new_log_entry;
+
+    new_log_entry.inode.inode_number = wfs_data->next_inode;
+    new_log_entry.inode.deleted = 0;
+    new_log_entry.inode.mode = S_IFREG;
+    new_log_entry.inode.flags = 0;
+    new_log_entry.inode.size = 0;
+    new_log_entry.inode.atime = 0;
+    new_log_entry.inode.mtime = 0;
+    new_log_entry.inode.ctime = 0;
+    new_log_entry.inode.links = 0;
+
+    //write our new log entry to our mmap
+    memcpy(&wfs_data->mmap_pointer[superblock->head], &new_log_entry, sizeof(struct wfs_log_entry) + new_log_entry.inode.size);
+
+    superblock->head += sizeof(struct wfs_log_entry);
+
+    wfs_data->next_inode++;
+    return 0;
+}
+
+static int wfs_mkdir(const char* path, mode_t mode) {
+    return 0;
 }
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi) {
@@ -275,6 +402,10 @@ int main(int argc, char *argv[]) {
         perror("mmap failed");
         return -1;
     }
+
+    wfs_data->next_inode = get_next_inode(wfs_data);
+
+    printf("next inode: %d\n", wfs_data->next_inode);
 
 
     wfs_data->rootdir = realpath(argv[argc-2], NULL);
