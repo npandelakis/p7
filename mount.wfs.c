@@ -194,6 +194,8 @@ struct wfs_log_entry *search_path(char * path) {
         return NULL;
     }
 
+    printf("Inode: %d\n", last_inode);
+
     struct wfs_log_entry *final_log_entry = search_inode(last_inode);
 
     printf("File found\n");
@@ -204,6 +206,8 @@ struct wfs_log_entry *search_path(char * path) {
 }
 
 static int wfs_getattr(const char *path, struct stat *stbuf) {
+
+    printf("Attr path: %s\n", path);
 
     char path_copy[strlen(path) + 1];
     strcpy(path_copy,path);
@@ -351,7 +355,7 @@ static int wfs_mknod(const char* path, mode_t mode, dev_t rdev) {
 
     new_log_entry.inode.inode_number = wfs_data->next_inode;
     new_log_entry.inode.deleted = 0;
-    new_log_entry.inode.mode = S_IFREG;
+    new_log_entry.inode.mode = S_IFREG | mode;
     new_log_entry.inode.flags = 0;
     new_log_entry.inode.size = 0;
     new_log_entry.inode.atime = time(NULL);
