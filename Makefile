@@ -9,7 +9,7 @@ all: $(NAME)
 
 .PHONY: mount.wfs
 mount.wfs:
-	$(CC) $(CFLAGS) mount.wfs.c $(FUSE_CFLAGS) -o mount.wfs
+	$(CC) $(CFLAGS) mount.wfs.c $(FUSE_CFLAGS) -g -o mount.wfs
 
 .PHONY: mkfs.wfs
 mkfs.wfs:
